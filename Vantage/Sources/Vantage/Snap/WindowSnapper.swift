@@ -10,12 +10,19 @@ private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", c
 /// main thread, which runs the event tap, never waits on an app. Presses queue up in order.
 final class WindowSnapper: @unchecked Sendable {
     static let shared = WindowSnapper()
-    private init() {}
+    private init() {
+        pairs = WindowPairs(queue: queue)
+        pairs.onFollowed = { [unowned self] windowID, frame in
+            memory.followed(windowID, to: frame)
+        }
+    }
 
     private let queue = DispatchQueue(label: "io.github.schoofsebert.missionstrike.snap", qos: .userInteractive)
     private let titleQueue = DispatchQueue(label: "io.github.schoofsebert.missionstrike.snap-titles", qos: .userInitiated)
     /// Each window's last snap and where it was before, for cycling and Restore. Only touched on `queue`.
     private var memory = SnapMemory()
+    /// Windows Snap Assist put side by side. Only touched on `queue`.
+    let pairs: WindowPairs
 
     /// Reads what only the main thread may (the app in front, the screens), then snaps off it.
     @MainActor
@@ -44,6 +51,19 @@ final class WindowSnapper: @unchecked Sendable {
         }
     }
 
+    /// Pairing was turned off.
+    func unpairAll() {
+        queue.async {
+            self.pairs.removeAll()
+        }
+    }
+
+    func unpairSplitAcrossSpaces() {
+        queue.async {
+            self.pairs.removeSplitAcrossSpaces()
+        }
+    }
+
     /// Each screen's area without the menu bar and Dock, in AX space.
     @MainActor
     static func visibleAreas() -> [CGRect] {
@@ -69,7 +89,7 @@ final class WindowSnapper: @unchecked Sendable {
             // A snap that went nowhere still closes the picker an earlier one left up.
             if let assist, !offered {
                 Task { @MainActor in
-                    SnapAssist.shared.show(action: action, target: nil, screenArea: .zero, candidates: [], generation: assist)
+                    SnapAssist.shared.show(action: action, target: nil, screenArea: .zero, candidates: [], snapped: nil, generation: assist)
                 }
             }
         }
@@ -88,8 +108,15 @@ final class WindowSnapper: @unchecked Sendable {
         let windowID = window.windowID
         // Restore, or fill again on a window that already fills its screen: back to where it was.
         if let windowID, action == .restore || (action == .maximize && memory.fillRestores(windowID, current: current, areas: areas)) {
+            // A pair goes back together.
+            let partner = action == .restore ? pairs.partner(of: windowID) : nil
+            pairs.remove(containing: windowID)
             if let frame = memory.takeRestore(windowID, current: current, areas: areas) {
                 Self.move(window, of: app, to: frame, action: .restore, area: frame)
+            }
+            if let partner, let partnerCurrent = partner.window.frame,
+               let frame = memory.takeRestore(partner.id, current: partnerCurrent, areas: areas) {
+                Self.move(partner.window, of: partner.app, to: frame, action: .restore, area: frame)
             }
             return
         }
@@ -99,10 +126,19 @@ final class WindowSnapper: @unchecked Sendable {
             return
         }
         if let windowID {
+            // Snapped anywhere but its own edge of the pair (cycling through sizes there keeps
+            // it): the pair ends now, so Snap Assist offers the rest as usual.
+            if !action.isDisplayMove, let pair = pairs.pair(containing: windowID), action != pair.edge(of: windowID) {
+                pairs.remove(containing: windowID)
+            }
             memory.willMove(windowID, from: current, liveWindows: Self.liveWindowIDs)
         }
         let taken = Self.move(window, of: app, to: plan.frame, action: action, area: plan.area) ?? plan.frame
-        if let assist {
+        if action.isDisplayMove, let windowID {
+            movePartner(of: windowID, with: action, besides: taken, areas: areas)
+        }
+        // A paired window's partner already fills the rest, and follows its new edge.
+        if let assist, windowID.flatMap(pairs.partner(of:)) == nil {
             offered = true
             offerTheRest(
                 action: action,
@@ -115,6 +151,20 @@ final class WindowSnapper: @unchecked Sendable {
             let record = SnapRecord(action: action, step: action.isDisplayMove ? nil : plan.step, windowID: windowID, frame: taken)
             memory.didMove(windowID, record, liveWindows: Self.liveWindowIDs)
         }
+    }
+
+    /// A paired window went to another display: its partner goes along, to the same place there.
+    private func movePartner(of windowID: CGWindowID, with action: SnapAction, besides taken: CGRect, areas: [CGRect]) {
+        guard let partner = pairs.partner(of: windowID),
+              let current = partner.window.frame,
+              let target = SnapLayout.frame(movingToDisplay: action, from: current, in: areas),
+              let area = SnapLayout.area(for: target, in: areas) else {
+            return
+        }
+        memory.willMove(partner.id, from: current, liveWindows: Self.liveWindowIDs)
+        let partnerTaken = Self.move(partner.window, of: partner.app, to: target, action: partner.pair.edge(of: partner.id), area: area) ?? target
+        memory.didMove(partner.id, SnapRecord(action: action, step: nil, windowID: partner.id, frame: partnerTaken), liveWindows: Self.liveWindowIDs)
+        pairs.moved(windowID, to: taken, partnerTo: partnerTaken)
     }
 
     /// Every window there is, to drop what snapping remembers about windows that are gone.
@@ -135,7 +185,7 @@ final class WindowSnapper: @unchecked Sendable {
             isRegularApp: { NSRunningApplication(processIdentifier: $0)?.activationPolicy == .regular }
         )
         Task { @MainActor in
-            SnapAssist.shared.show(action: action, target: rest, screenArea: area, candidates: candidates, generation: generation)
+            SnapAssist.shared.show(action: action, target: rest, screenArea: area, candidates: candidates, snapped: snapped, generation: generation)
         }
     }
 
@@ -185,8 +235,14 @@ final class WindowSnapper: @unchecked Sendable {
     }
 
     /// Puts the picked window in `target`, against the edge `hugging` names, inside `screenArea`,
-    /// and brings it forward.
-    func place(_ candidate: SnapCandidate, in target: CGRect, hugging edge: SnapAction, within screenArea: CGRect) {
+    /// and brings it forward; with `pairingWith`, pairs it with the window snapped before.
+    func place(
+        _ candidate: SnapCandidate,
+        in target: CGRect,
+        hugging edge: SnapAction,
+        within screenArea: CGRect,
+        pairingWith snapped: SnapAssistModel.Snapped?
+    ) {
         queue.async {
             let app = AXElement.application(candidate.pid)
             guard let window = app.windows?.first(where: { $0.windowID == candidate.windowID }) else {
@@ -209,7 +265,36 @@ final class WindowSnapper: @unchecked Sendable {
             }
             let record = SnapRecord(action: edge, step: step, windowID: candidate.windowID, frame: taken)
             self.memory.didMove(candidate.windowID, record, liveWindows: Self.liveWindowIDs)
+            if let snapped {
+                self.pair(snapped, with: candidate, window: window, app: app, at: taken, hugging: edge)
+            }
         }
+    }
+
+    private func pair(
+        _ snapped: SnapAssistModel.Snapped,
+        with candidate: SnapCandidate,
+        window: AXElement,
+        app: AXElement,
+        at taken: CGRect,
+        hugging edge: SnapAction
+    ) {
+        let snappedApp = AXElement.application(snapped.pid)
+        guard let snappedID = snapped.windowID,
+              let snappedWindow = snappedApp.windows?.first(where: { $0.windowID == snappedID }),
+              let snappedFrame = snappedWindow.frame,
+              let pair = WindowPair(
+                  snapped: snappedID, at: snappedFrame,
+                  picked: candidate.windowID, at: taken,
+                  action: SnapAssistModel.opposite(of: edge)
+              ) else {
+            logger.info("Snap Assist: the windows don't line up, so they aren't paired.")
+            return
+        }
+        pairs.add(pair, windows: [
+            snappedID: (snappedWindow, snappedApp, snapped.pid),
+            candidate.windowID: (window, app, candidate.pid),
+        ])
     }
 
     /// Sets the frame and returns the one the window took. Shrinks before moving, so the window

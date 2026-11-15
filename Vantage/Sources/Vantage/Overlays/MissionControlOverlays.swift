@@ -24,18 +24,23 @@ enum MissionControlOverlays {
         observers = [
             observe(.missionControlDidOpen) {
                 FirstRunHint.shared.missionControlDidOpen()
+                PairBadges.shared.missionControlDidOpen()
+                WindowSnapper.shared.unpairSplitAcrossSpaces()
             },
             observe(.missionControlDidClose) {
                 WindowCountChips.shared.hide()
                 KeyboardHints.shared.cancel()
                 CheatSheet.shared.dismiss()
                 FirstRunHint.shared.missionControlDidClose()
+                PairBadges.shared.hide()
+                WindowSnapper.shared.unpairSplitAcrossSpaces()
                 MissionControlThumbnails.shared.forget()
             },
             observe(.vantageActionSucceeded) {
                 FirstRunHint.shared.actionSucceeded()
                 MissionControlThumbnails.shared.forget()
                 WindowCountChips.shared.layoutMayHaveChanged()
+                PairBadges.shared.layoutMayHaveChanged()
             }
         ]
     }
@@ -69,11 +74,17 @@ enum MissionControlOverlays {
         }
     }
 
+    /// Whether anything is drawn when Mission Control opens, so it's worth noticing.
+    static var watchesForOpening: Bool {
+        FirstRunHint.shared.isPending || PairBadges.shared.hasPairs
+    }
+
     /// Mission Control's key or a trackpad swipe may be opening Mission Control. Nothing else
     /// would notice until the next click or key, so look shortly after, while the first-run tip
-    /// is still to be shown. Cheap: only notes the time, the checks run in a task.
+    /// is still to be shown or pairs are to be badged. Cheap: only notes the time, the checks
+    /// run in a task.
     static func missionControlMayOpen() {
-        guard FirstRunHint.shared.isPending else { return }
+        guard watchesForOpening else { return }
         lastOpeningSignal = .now
         guard !isCheckingForOpening else { return }
         isCheckingForOpening = true

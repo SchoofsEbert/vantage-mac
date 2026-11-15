@@ -35,6 +35,13 @@ struct SnapMemory {
         records[windowID] = record
     }
 
+    /// A paired window's edge followed its partner's: still where Vantage put it, so a later
+    /// snap keeps where it was before the first.
+    mutating func followed(_ windowID: CGWindowID, to frame: CGRect) {
+        guard let record = records[windowID] else { return }
+        records[windowID] = SnapRecord(action: record.action, step: nil, windowID: windowID, frame: frame)
+    }
+
     /// Whether filling the screen means Restore instead: the window already fills it, or
     /// Vantage filled it and it hasn't moved (apps like Terminal don't fill it exactly).
     func fillRestores(_ windowID: CGWindowID, current: CGRect, areas: [CGRect]) -> Bool {

@@ -109,18 +109,30 @@ enum WindowList {
 
     /// Whether the window belongs to any Space (private API).
     static func isOnSpace(_ windowID: CGWindowID) -> Bool {
+        !spaces(of: windowID).isEmpty
+    }
+
+    /// The Spaces a window is on (private API); none for a minimized window.
+    static func spaces(of windowID: CGWindowID) -> Set<UInt64> {
         let ids = [NSNumber(value: windowID)] as CFArray
-        let spaces = CGSCopySpacesForWindows(CGSMainConnectionID(), allSpacesMask, ids)?.takeRetainedValue() as? [Any]
-        return spaces?.isEmpty == false
+        let spaces = CGSCopySpacesForWindows(CGSMainConnectionID(), allSpacesMask, ids)?.takeRetainedValue() as? [NSNumber]
+        return Set((spaces ?? []).map(\.uint64Value))
+    }
+
+    /// Whether two windows are each on a Space and share none.
+    static func areOnDifferentSpaces(_ one: CGWindowID, _ other: CGWindowID) -> Bool {
+        let ones = spaces(of: one), others = spaces(of: other)
+        return !ones.isEmpty && !others.isEmpty && ones.isDisjoint(with: others)
     }
 
     /// Current, other and fullscreen Spaces.
     private static let allSpacesMask: Int32 = 7
 }
 
-// WARNING: Apple-private SkyLight calls, used only to tell windows on other Spaces from the
-// invisible windows apps keep. If they go away, apps whose only windows are on another Space
-// look windowless again, as before.
+// WARNING: Apple-private SkyLight calls, used to tell windows on other Spaces from the invisible
+// windows apps keep, and to end pairs split across Spaces. If they go away, apps whose only
+// windows are on another Space look windowless again, as before, and pairs stay paired across
+// Spaces.
 @_silgen_name("CGSMainConnectionID")
 private func CGSMainConnectionID() -> Int32
 

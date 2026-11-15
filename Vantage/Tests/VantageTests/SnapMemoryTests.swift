@@ -25,6 +25,19 @@ struct SnapMemoryTests {
         #expect(memory.takeRestore(1, current: free, areas: [area]) == nil)
     }
 
+    @Test("After its edge followed a pair's, a window still restores to where it was before the snap")
+    func restoresAfterFollowing() {
+        var memory = SnapMemory()
+        let half = snapped(&memory, 1, .left, step: 0, from: free)
+        let wider = CGRect(x: half.minX, y: half.minY, width: 900, height: half.height)
+        memory.followed(1, to: wider)
+        #expect(memory.placedHere(1, frame: wider))
+        memory.willMove(1, from: wider, liveWindows: live)
+        #expect(memory.takeRestore(1, current: wider, areas: [area]) == free)
+        memory.followed(2, to: wider)
+        #expect(!memory.placedHere(2, frame: wider))
+    }
+
     @Test("Moved by hand after a snap, a window restores to where it was moved")
     func movedByHand() {
         var memory = SnapMemory()

@@ -10,6 +10,8 @@ struct WindowsSettingsPane: View {
     private var enableSnapAssist = SettingKey.enableSnapAssist.defaultBool
     @AppStorage(SettingKey.showSnapPreviews.rawValue)
     private var showSnapPreviews = SettingKey.showSnapPreviews.defaultBool
+    @AppStorage(SettingKey.pairSnappedWindows.rawValue)
+    private var pairSnappedWindows = SettingKey.pairSnappedWindows.defaultBool
     private let screenRecording = ScreenRecordingPermission.shared
 
     var body: some View {
@@ -27,6 +29,11 @@ struct WindowsSettingsPane: View {
                 Toggle(isOn: $showSnapPreviews) {
                     Text("Show Window Previews")
                     Text("Show a picture of each window instead of its app's icon. Needs Screen Recording access.")
+                }
+                .disabled(!enableWindowSnapping || !enableSnapAssist)
+                Toggle(isOn: $pairSnappedWindows) {
+                    Text("Keep Picked Windows Together")
+                    Text("Drag the edge between them to resize both. They minimize, come forward and move to another display together.")
                 }
                 .disabled(!enableWindowSnapping || !enableSnapAssist)
                 if screenRecording.isMissing {

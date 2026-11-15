@@ -71,8 +71,8 @@ enum SnapAssistModel {
     static let maxCandidates = 9
     private static let minimumSize: CGFloat = 50
 
-    /// The snapped window, to leave out of the offer.
-    struct Snapped {
+    /// The snapped window, to leave out of the offer and to pair with the pick.
+    struct Snapped: Sendable {
         let windowID: CGWindowID?
         let pid: pid_t
         /// The frame it took (AX space, as window-list bounds are), for when its ID is unknown.

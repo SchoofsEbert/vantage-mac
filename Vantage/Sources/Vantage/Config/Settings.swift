@@ -23,6 +23,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case enableWindowSnapping
     case enableSnapAssist
     case showSnapPreviews
+    case pairSnappedWindows
     case snapLeftShortcut
     case snapRightShortcut
     case snapTopShortcut
@@ -44,7 +45,8 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe, .enableWindowSnapping, .showSnapPreviews: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
              .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
-             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics, .enableSnapAssist: true
+             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics, .enableSnapAssist,
+             .pairSnappedWindows: true
         }
     }
 
@@ -76,6 +78,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .enableWindowSnapping: "snapping"
         case .enableSnapAssist: "snapAssist"
         case .showSnapPreviews: "snapPreviews"
+        case .pairSnappedWindows: "pairs"
         case .snapLeftShortcut: "snapLeft"
         case .snapRightShortcut: "snapRight"
         case .snapTopShortcut: "snapTop"
@@ -158,6 +161,8 @@ struct Settings: Equatable, Sendable {
     var snapShortcuts: SnapShortcuts
     var enableSnapAssist: Bool
     var showSnapPreviews: Bool
+    /// Off while snapping or Snap Assist is.
+    var pairSnappedWindows: Bool
 }
 
 extension Settings {
@@ -182,7 +187,9 @@ extension Settings {
         tabSwipeApps: TabSwipeApps(scope: .allApps, bundleIDs: []),
         snapShortcuts: SnapShortcuts(),
         enableSnapAssist: SettingKey.enableSnapAssist.defaultBool,
-        showSnapPreviews: SettingKey.showSnapPreviews.defaultBool
+        showSnapPreviews: SettingKey.showSnapPreviews.defaultBool,
+        pairSnappedWindows: SettingKey.enableWindowSnapping.defaultBool && SettingKey.enableSnapAssist.defaultBool
+            && SettingKey.pairSnappedWindows.defaultBool
     )
 
     init(_ defaults: UserDefaults) {
@@ -213,6 +220,7 @@ extension Settings {
             : SnapShortcuts()
         enableSnapAssist = defaults.bool(.enableSnapAssist)
         showSnapPreviews = defaults.bool(.showSnapPreviews)
+        pairSnappedWindows = defaults.bool(.enableWindowSnapping) && defaults.bool(.enableSnapAssist) && defaults.bool(.pairSnappedWindows)
     }
 }
 
@@ -240,5 +248,8 @@ final class SettingsStore {
 
     private func reload() {
         current = Settings(.standard)
+        if !current.pairSnappedWindows {
+            WindowSnapper.shared.unpairAll()
+        }
     }
 }

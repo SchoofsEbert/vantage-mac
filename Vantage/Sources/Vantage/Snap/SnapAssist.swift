@@ -30,6 +30,8 @@ final class SnapAssist {
         let screenArea: CGRect
         let screen: CGRect
         var candidates: [SnapCandidate]
+        /// The window snapped, to pair with the one picked.
+        let snapped: SnapAssistModel.Snapped?
         let icons: [pid_t: NSImage]
         var previews: [CGWindowID: CGImage] = [:]
         var backdrop: Backdrop = .loading
@@ -100,7 +102,14 @@ final class SnapAssist {
     /// Prepares the picker over `target` (AX space), unless something happened since the snap.
     /// It shows once Accessibility has weeded out windows that can't be placed and the wallpaper
     /// is in, or after `detailsWait`, whichever comes first.
-    func show(action: SnapAction, target: CGRect?, screenArea: CGRect, candidates: [SnapCandidate], generation: Int) {
+    func show(
+        action: SnapAction,
+        target: CGRect?,
+        screenArea: CGRect,
+        candidates: [SnapCandidate],
+        snapped: SnapAssistModel.Snapped?,
+        generation: Int
+    ) {
         guard generation == self.generation else { return }
         isPending = false
         guard let target, !candidates.isEmpty,
@@ -125,6 +134,7 @@ final class SnapAssist {
                 candidate.title = known[candidate.windowID].flatMap { $0 }
                 return candidate
             },
+            snapped: snapped,
             icons: icons,
             previews: previous?.previews ?? [:],
             panel: OverlayCanvas.local(ScreenCoordinates.yFlipped(target), in: screen.frame)
@@ -269,7 +279,8 @@ extension SnapAssist {
                 candidate,
                 in: session.target,
                 hugging: SnapAssistModel.opposite(of: session.action),
-                within: session.screenArea
+                within: session.screenArea,
+                pairingWith: SettingsStore.shared.current.pairSnappedWindows ? session.snapped : nil
             )
         case .move(let direction):
             moveSelection(direction)

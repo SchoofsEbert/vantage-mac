@@ -36,6 +36,17 @@ struct SettingsTests {
         }
     }
 
+    @Test("Pairing is off while snapping or Snap Assist is")
+    func pairingNeedsSnapAssist() {
+        withDefaults { defaults in
+            #expect(!Settings(defaults).pairSnappedWindows)
+            defaults.set(true, forKey: SettingKey.enableWindowSnapping.rawValue)
+            #expect(Settings(defaults).pairSnappedWindows)
+            defaults.set(false, forKey: SettingKey.enableSnapAssist.rawValue)
+            #expect(!Settings(defaults).pairSnappedWindows)
+        }
+    }
+
     @Test("Registered defaults read the same as the fallbacks")
     func registeredDefaults() {
         withDefaults { registered in

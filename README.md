@@ -33,6 +33,8 @@ Snap the window in front to one side, and the other side shows your other window
 - **⌃⌥↑** fills the screen, **⌃⌥↓** puts the window back where it was.
 - **⇧⌃⌥←** and **⇧⌃⌥→** move it to the previous or next display.
 
+A window you pick this way stays paired with the one you snapped. Drag the edge between them and both resize. Minimize one, bring one forward or move one to another display, and the other comes along; ⌃⌥↓ puts both back. In Mission Control, each shows a badge with the half it takes. Move one away and they go their own way again.
+
 Snapping is off until you turn it on, in the setup guide or in Settings → Windows. There you can also show a picture of each window instead of its app's icon; that needs Screen Recording access, and macOS shows its recording dot briefly each time.
 
 ## Install
