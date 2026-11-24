@@ -10,6 +10,9 @@ extension Notification.Name {
 
     /// Posted when `CGEvent.tapCreate` fails entirely (e.g., on MDM-managed Apple Silicon Macs).
     static let eventTapCreationFailed = Notification.Name("io.github.schoofsebert.missionstrike.eventTapCreationFailed")
+
+    /// macOS disabled the tap for something other than a slow callback, and it was stopped.
+    static let eventTapDisabledBySystem = Notification.Name("io.github.schoofsebert.missionstrike.eventTapDisabledBySystem")
 }
 
 @MainActor
@@ -25,6 +28,13 @@ class EventTapManager {
     /// Heap-allocated storage for the mach port pointer, passed to the
     /// callback via `refcon` so it can re-enable the tap on timeout.
     private var tapPortPointer: UnsafeMutablePointer<CFMachPort?>?
+
+    /// When macOS last disabled the tap for a slow callback.
+    private var lastTimeout: ContinuousClock.Instant?
+    private var isReenableScheduled = false
+    /// A second timeout within this means the main thread keeps getting stuck: every event
+    /// would wait on it again, so input gets this long to flow freely before the tap is back.
+    private static let timeoutBackoff: Duration = .seconds(5)
 
     /// Whether the event tap is currently active and listening.
     var isRunning: Bool { eventTapPort != nil }
@@ -162,7 +172,7 @@ extension EventTapManager {
         }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             Diagnostics.shared.recordTapDisabled(byTimeout: type == .tapDisabledByTimeout)
-            handleTapDisabled(refcon: refcon)
+            handleTapDisabled(byTimeout: type == .tapDisabledByTimeout, refcon: refcon)
             return false
         }
         // Keys Vantage posted again after deciding not to act on them.
@@ -288,20 +298,39 @@ extension EventTapManager {
 
     /// Watchdog: macOS disables the tap if the callback takes too long.
     /// Re-enable it immediately to recover without requiring a relaunch.
-    private func handleTapDisabled(refcon: UnsafeMutableRawPointer?) {
-        // Revoking Accessibility also disables the tap. Re-enabling it then fights
-        // macOS and can stall system-wide input, so tear it down instead.
-        guard AXIsProcessTrusted() else {
-            logger.warning("Event tap disabled after Accessibility was revoked — stopping it.")
+    private func handleTapDisabled(byTimeout: Bool, refcon: UnsafeMutableRawPointer?) {
+        // Revoking Accessibility disables the tap too, while AXIsProcessTrusted() can still say
+        // yes for a moment. Re-enabling it then fights macOS and stalls all input, so only a
+        // timeout is re-enabled; anything else tears the tap down, and the Accessibility sync
+        // starts it again if the grant is still there.
+        guard byTimeout, AXIsProcessTrusted() else {
+            logger.warning("Event tap disabled by macOS (Accessibility revoked?) — stopping it.")
             // Not from inside the tap's own callback.
-            Task { @MainActor in EventTapManager.shared.stop() }
+            Task { @MainActor in
+                EventTapManager.shared.stop()
+                NotificationCenter.default.post(name: .eventTapDisabledBySystem, object: nil)
+            }
             return
         }
-        if let refcon,
-           let tap = refcon.assumingMemoryBound(to: CFMachPort?.self).pointee {
-            CGEvent.tapEnable(tap: tap, enable: true)
-            logger.warning("Event tap was disabled by macOS — re-enabled automatically.")
+        guard let refcon,
+              let tap = refcon.assumingMemoryBound(to: CFMachPort?.self).pointee else { return }
+        let now = ContinuousClock.now
+        defer { lastTimeout = now }
+        if let lastTimeout, now - lastTimeout < Self.timeoutBackoff {
+            guard !isReenableScheduled else { return }
+            isReenableScheduled = true
+            logger.warning("Event tap timed out again — re-enabling it in \(Self.timeoutBackoff).")
+            Task { @MainActor in
+                try? await Task.sleep(for: Self.timeoutBackoff)
+                isReenableScheduled = false
+                // Stopped or recreated meanwhile.
+                guard eventTapPort === tap, AXIsProcessTrusted() else { return }
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return
         }
+        CGEvent.tapEnable(tap: tap, enable: true)
+        logger.warning("Event tap was disabled by macOS — re-enabled automatically.")
     }
 }
 

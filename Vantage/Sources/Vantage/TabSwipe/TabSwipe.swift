@@ -90,7 +90,7 @@ final class TabSwipe {
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             // Without Accessibility the main tap stops, and this one with it.
-            if let tap, AXIsProcessTrusted() {
+            if let tap, type == .tapDisabledByTimeout, AXIsProcessTrusted() {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
             return

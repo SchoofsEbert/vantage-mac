@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
     private var accessibilityObserver: Any?
     private var eventTapObserver: Any?
     private var eventTapFailureObserver: Any?
+    private var eventTapDisabledObserver: Any?
     private var wasAccessibilityEnabled = AXIsProcessTrusted()
     private var accessibilityRetryTask: Task<Void, Never>?
 
@@ -85,6 +86,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
             }
         }
 
+        // macOS disabled the tap and it was torn down: start it again if still trusted
+        eventTapDisabledObserver = NotificationCenter.default.addObserver(
+            forName: .eventTapDisabledBySystem,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.scheduleAccessibilitySync()
+            }
+        }
+
         // Observe event tap creation failures to show a user-facing alert
         eventTapFailureObserver = NotificationCenter.default.addObserver(
             forName: .eventTapCreationFailed,
@@ -124,10 +136,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
     /// Sync immediately, then retry at fixed offsets while TCC catches up.
     private func scheduleAccessibilitySync() {
         accessibilityRetryTask?.cancel()
+        let wasTrusted = AXIsProcessTrusted()
         accessibilityRetryTask = AccessibilityTrustRetry.schedule { [weak self] in
             self?.syncAccessibilityState()
-            // Stop early once trusted and the tap is running.
-            if AXIsProcessTrusted(), EventTapManager.shared.isRunning {
+            // Stop early once the change has landed. A revocation also lags, so stopping
+            // while still trusted would leave the tap running after the grant is gone.
+            if AXIsProcessTrusted() != wasTrusted {
                 self?.accessibilityRetryTask?.cancel()
             }
         }
