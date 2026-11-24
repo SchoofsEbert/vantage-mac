@@ -76,7 +76,7 @@ Vantage used to be called MissionStrike. A MissionStrike install updates to Vant
 
 </details>
 
-Every gesture can be switched off in Settings, where you can also change the modifier key, change the snap shortcuts, middle-click Dock icons to quit apps, switch tabs with a three-finger swipe, or add a poof when a window closes.
+Every gesture can be switched off in Settings, where you can also change the modifier key, change the snap shortcuts, middle-click Dock icons to quit apps, switch tabs with a three-finger swipe (that needs Input Monitoring access), or add a poof when a window closes.
 
 ## Building from source
 

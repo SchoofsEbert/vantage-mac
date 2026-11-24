@@ -9,7 +9,8 @@ private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", c
 ///
 /// A tap of its own, listen-only: touches never wait for it, and the main tap's callback stays
 /// as it is. It exists only while the setting is on and the main tap runs, so Pause and a
-/// revoked Accessibility grant stop it too.
+/// revoked Accessibility grant stop it too. Listening needs Input Monitoring besides; without
+/// it the tap is made but gets nothing (see `InputMonitoringPermission`).
 @MainActor
 final class TabSwipe {
     static let shared = TabSwipe()
@@ -27,6 +28,17 @@ final class TabSwipe {
                 MainActor.assumeIsolated { TabSwipe.shared.sync() }
             }
         }
+        observers.append(
+            NotificationCenter.default.addObserver(forName: .inputMonitoringChanged, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { TabSwipe.shared.restart() }
+            }
+        )
+        sync()
+    }
+
+    private func restart() {
+        guard tap != nil else { return }
+        stop()
         sync()
     }
 

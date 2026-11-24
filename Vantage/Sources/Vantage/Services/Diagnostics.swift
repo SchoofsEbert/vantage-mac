@@ -89,6 +89,7 @@ final class Diagnostics {
             macOS \(ProcessInfo.processInfo.operatingSystemVersionString), \(Self.hardwareModel())
             Screens: \(Self.screens())
             Accessibility: \(AXIsProcessTrusted() ? "allowed" : "not allowed")
+            Input Monitoring: \(CGPreflightListenEventAccess() ? "allowed" : "not allowed")
             Settings: \(Self.settings())
             Event tap: \(tapSummary())
 

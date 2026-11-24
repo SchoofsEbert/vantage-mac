@@ -13,6 +13,7 @@ struct TrackpadSettingsPane: View {
     /// `@AppStorage` doesn't hold arrays: written back to the defaults on every change.
     @State private var bundleIDs = UserDefaults.standard.strings(.tabSwipeApps)
     @State private var conflicts = TabSwipeConflict.current()
+    private let inputMonitoring = InputMonitoringPermission.shared
 
     /// Back from System Settings: the trackpad gestures may have changed.
     private let appBecameActive = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
@@ -22,13 +23,26 @@ struct TrackpadSettingsPane: View {
             Section {
                 Toggle(isOn: $enableTabSwipe) {
                     Text("Swipe Between Tabs")
-                    Text("Swipe left or right with three fingers for the previous or next tab, in any app that switches tabs with ⌃⇥. Swipe further to skip more tabs.")
+                    Text("Swipe left or right with three fingers for the previous or next tab, in any app that switches tabs with ⌃⇥. Swipe further to skip more tabs. Needs Input Monitoring access.")
                 }
                 Toggle(isOn: $tabSwipeHaptics) {
                     Text("Tick for Each Tab")
                     Text("Tap the trackpad lightly each time the tab changes.")
                 }
                 .disabled(!enableTabSwipe)
+                if inputMonitoring.isMissing {
+                    LabeledContent {
+                        Button("Open Privacy Settings") {
+                            inputMonitoring.openPrivacySettings()
+                        }
+                    } label: {
+                        Label(
+                            "Allow Vantage to monitor input, then reopen it. Until then, swipes switch no tabs.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .symbolRenderingMode(.multicolor)
+                    }
+                }
             }
 
             if enableTabSwipe, !conflicts.isEmpty {
